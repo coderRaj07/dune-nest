@@ -4,12 +4,16 @@ import { DuneClient } from '@duneanalytics/client-sdk';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { promisify } from 'util';
+import * as zlib from 'zlib';
+
+const gzip = promisify(zlib.gzip);
+const gunzip = promisify(zlib.gunzip);
 
 @Injectable()
 export class DuneValidationService {
   private readonly duneClient: DuneClient;
   private readonly logger = new Logger(DuneValidationService.name);
-
   private readonly queryMappings: Record<string, number> = {
     'alpha_index_7d': 3804774,
     'beta_index_30_d': 3804861,
@@ -80,31 +84,45 @@ export class DuneValidationService {
   }
 
   /**
+   * Compress data before storing in Redis
+   */
+  private async compressData(data: any): Promise<Buffer> {
+    return await gzip(JSON.stringify(data));
+  }
+
+  /**
+   * Decompress data retrieved from Redis
+   */
+  private async decompressData(compressedData: Buffer): Promise<any> {
+    return JSON.parse((await gunzip(compressedData)).toString());
+  }
+
+  /**
    * Fetch query result, first checking Redis cache.
    */
   async getQueryResultByName(queryName: string): Promise<any> {
     this.logger.log(`Fetching query result for: ${queryName}`);
     const queryId = this.queryMappings[queryName.toLowerCase()];
-    
+
     if (!queryId) {
       throw new HttpException('Query name not found', HttpStatus.NOT_FOUND);
     }
 
     const cacheKey = `dune_query_${queryId}`;
-    
-    // 1️⃣ Try fetching from Redis
-    const cachedData = await this.cacheManager.get(cacheKey);
-    if (cachedData) {
+
+    // Try fetching from Redis and decompress it
+    const compressedData = await this.cacheManager.get<Buffer>(cacheKey);
+    if (compressedData) {
       this.logger.log(`Cache hit for ${queryName}`);
-      return cachedData;
+      return await this.decompressData(compressedData);
     }
 
-    // 2️⃣ Fetch from Dune if cache miss
+    // Fetch from Dune if cache miss
     const result = await this.getQueryResult(queryId);
-    
-    // 3️⃣ Store result in Redis
-    await this.cacheManager.set(cacheKey, result);
-    
+
+    // Store result in Redis with compression
+    await this.cacheManager.set(cacheKey, await this.compressData(result));
+
     return result;
   }
 
@@ -125,23 +143,29 @@ export class DuneValidationService {
   /**
    * Refresh cache for all queries every 24 hours using a cron job
    */
-
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async refreshCache() {
-    this.logger.log('Refreshing Dune query cache...');
+    this.logger.log('Refreshing Dune query cache sequentially...');
 
-    await Promise.all(
-      Object.entries(this.queryMappings).map(async ([queryName, queryId]) => {
-        try {
-          const result = await this.getQueryResult(queryId);
-          const cacheEntry = { data: result, updatedAt: Date.now() };
-          await this.cacheManager.set(`dune_query_${queryId}`, cacheEntry);
-          this.logger.log(`Cache updated for: ${queryName}`);
-        } catch (error) {
-          this.logger.error(`Failed to refresh cache for ${queryName}: ${error.message}`);
-        }
-      })
-    );
+    for (const [queryName, queryId] of Object.entries(this.queryMappings)) {
+      try {
+        this.logger.log(`Fetching data for: ${queryName}`);
+
+        // Wait before making the next request to prevent hitting rate limits
+        await new Promise((resolve) => setTimeout(resolve, 5000)); // 5s delay (adjust if needed)
+
+        const result = await this.getQueryResult(queryId);
+        const compressedData = await this.compressData(result);
+
+        await this.cacheManager.set(`dune_query_${queryId}`, compressedData);
+        this.logger.log(`Cache updated for: ${queryName}`);
+
+      } catch (error) {
+        this.logger.error(`Failed to refresh cache for ${queryName}: ${error.message}`);
+      }
+    }
+
+    this.logger.log('Cache refresh complete.');
   }
 
 }
