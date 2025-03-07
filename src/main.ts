@@ -10,10 +10,12 @@ import { HttpExceptionFilter } from './_common/utils/http-exception.filter';
 
 async function bootstrap() {
   // Create the NestJS application using the Fastify adapter
-  const app = await NestFactory.create<NestFastifyApplication>(
-    AppModule,
-    new FastifyAdapter(),
-  );
+  const app = await NestFactory.create
+    // <NestFastifyApplication>
+    (
+      AppModule,
+      // new FastifyAdapter(),
+    );
 
   const configService = app.get(ConfigService);
 
