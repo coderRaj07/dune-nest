@@ -4,7 +4,7 @@ import { DuneClient } from '@duneanalytics/client-sdk';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { compressData, decompressData } from 'src/_common/utils/redis.utility';
+import { compressData, decompressData } from '../_common/utils/redis.utility';
 
 @Injectable()
 export class DuneValidationService {
