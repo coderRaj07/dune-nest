@@ -6,7 +6,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { FastifyRequest, FastifyReply } from 'fastify';
-import * as moment from 'moment';
+import moment from 'moment';
 
 @Catch(HttpException)
 export class HttpExceptionFilter implements ExceptionFilter {
