@@ -11,7 +11,7 @@ export class DuneValidationService {
   private readonly duneClient: DuneClient;
   private readonly logger = new Logger(DuneValidationService.name);
   private readonly queryMappings: Record<string, number> = {
-    'alpha_index_7d': 3804774,
+    'alpha_index_7_d': 3804774,
     'beta_index_30_d': 3804861,
     'gamma_index_90_d': 3804881,
     'crypto_narrative_24_hr': 3594639,
